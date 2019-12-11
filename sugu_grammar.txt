@@ -6,7 +6,7 @@
 *}
 
 Program        : Imports?, (ImplicitMain | ExplicitMain)?,
-                  (Initialization | ConstDeclaration | Nonruntime | Function)*
+                  (Initialization | GlobalConstDeclaration | Nonruntime | Function | Enum | Struct)*
 
 Imports        : (Import | ('namespace', Identifier, ':', '\n', Import+, '\n', '\n')) +
 
@@ -17,13 +17,12 @@ ImplicitMain   : ((Statement | '|'), ('\n' | ';'))*
 ExplicitMain   : 'fun', 'main', 'i32', '(', (Identifier, 'List')?, ')', ':', '\n',
                   StmtBlock
 
-ConstDeclaration : 'const', Initialization
-
 # Nonruntimes are executed during compilation and can compute the values of constants declared available
 # using the .available keyword.
 
 Nonruntime     : '.nonruntime', '\n',
-                  (Statement | Function | Struct | Enum | AvailableStmt | UnavailableStmt) *, '\n', '.end'
+                  (Statement | Function | Struct | Enum | AvailableStmt | UnavailableStmt | '|') *,
+                  '\n', '.end'
 
 AvailableStmt  : '.available', (ArgList | 'any')
 
@@ -32,6 +31,28 @@ UnavailableStmt: '.unavailable' (ArgList | 'all')
 Function       : 'fun', Identifier, (TypeKeyword | 'noreturn'), '(', ParamList?, ')', ':', '\n',
                     StmtBlock
                : ErrFunc
+
+# Enums can also inherit from other enums. This defaults
+# the first enumerand to superEnum.largerstEnumerand + 1.
+# Enums can inherit from only one other enum and the values
+# of the enumerands in the type hierarchy cannot conflict.
+
+Enum           : 'enum', Identifier, ( '(', Identifier, ')' )?, ':', '\n',
+                 ((Identifier | EnumerandAssign), ',')*, (Identifier | EnumerandAssign), ','?,
+                 (('\n', '\n') | '\')
+
+EnumerandAssign: Identifier, '=', Expr
+
+Struct         : 'struct', Identifier, ( '(', Identifier?, (',' Identifier, ','?)* ')' )?, ':', '\n',
+                  (FieldDeclaration | ConstDeclaration)*, ('\n', '\n') | '\'
+
+# The compiler can populate a structs fields with default values when it allocates the struct.
+
+FieldDeclaration : 'field', Identifier, TypeKeyword, ('=', Expr), '\n' | ';'
+
+GlobalConstDeclaration : 'global', ConstDeclaration
+
+ConstDeclaration : 'const', Initialization
 
 {*
   A function prefixed with a .error statement is called when an error is raised. It either handles the error
@@ -113,11 +134,13 @@ Initialization : Identifier, ( TypeKeyword | DeclaredType ), '=', expr, ('\n' | 
 
 DeclaredType   : '$', Identifier
 
-Assign         : (Identifier | MemFieldRef), ('=' | InPlaceAssignOperator), expr, ('\n' | ';')
+Assign         : (Identifier | MemFieldRef), ('=' | InPlaceArrithOperator), expr, ('\n' | ';')
 
 # The in place arrithmetic only works with some of the operators. No keyword operators, no unary operators.
 
-InPlaceAssignOperator : MainOperator, '='
+InPlaceArrithOperator : InPlaceArrSubset, '='
+
+InPlaceArrSubset : '+' | '-' | '**' | '*' | '//' | '/' | '%' | '^' | '&' | '|' | '>>' | '<<'
 
 Expr           : Expr, MainOperator, Expr
                : MainOperator, Expr
