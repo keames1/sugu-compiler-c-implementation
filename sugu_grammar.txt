@@ -1,0 +1,65 @@
+Initialization : Identifier, TypeKeyword, '=', expr
+
+Assign         : (Identifier | MemFieldRef), ('=' | InPlaceAssignOperator), expr
+
+InPlaceAssignOperator : MainOperator, '='
+
+Expr           : Expr, MainOperator, Expr
+               : MainOperator, Expr
+               : Identifier | MemFieldRef, ('<+' | '<-')
+               : Expr, 'if', Expr, ('elif', expr, ':', expr)?, 'else', Expr
+               : Atom | FunCall | ParenExpr
+
+ParenExpr      : '(', expr, ')'
+
+# These are ordered by token precidence (Excluding atoms and function calls). +, -, and * are duplicated,
+# signifying their precidence as both unary and binary operators. \ is the indexing operator.
+# It's behavior, not syntax but unary + will be an absolute value operator. (I think this will be more useful.)
+# <+ and <- are in place increment and decrement respectively (Postfix operators).
+
+MainOperator   : 'not'| '~' | '$' | '+' | '-' | '&' | '*'
+               : 'and' | 'or' | '==' | '!=' | '>=' | '<=' | '<' | '>'
+               : '**' | '*' | '/' | '//' | '%' | '+' | '-'
+
+FunCall        : Identifier, '(', ParamList? ')'
+
+ParamList      : (Expr, ',') *, Expr, ','?
+
+Atom           : Identifier | MemFieldRef | IntegerLiteral | FloatLiteral
+               : CharLiteral | StringLiteral | ArrayLiteral
+
+MemFieldRef    : (Identifier, '.') +, Identifier
+
+Identifier     : ('a' - 'z' | '_') +, ('a' - 'z' | '_' | '0' - '9') *
+
+IntegerLiteral : (ImplicitDecimal | ExplicitDecimal | Hexadecimal | Binary), TypeKeyword?
+
+ImplicitDecimal: ('0' - '9'), ('0' - '9' | '_') *
+
+ExplicitDecimal: ('0d' | '0D'), ('0' - '9'), ('0' - '9' | '_') *
+
+Hexadecimal    : ('0x' | '0X'), ('0' - '9' | 'a' - 'f' | 'A' - 'F' | '_') *
+
+Binary         : ('0b' | '0B'), ('0' | '1' | '_')
+
+# Floats are only supported on decimal as of now.
+
+FloatLiteral   : ('0d' | '0D')?, ('0' - '9'), ('0' - '9' | '_') * '.', ('0' - '9' | '_') +
+
+# It says StringBody for convenience reasons. If the string evaluates to length greater than 1 in a character
+# literal, the compiler will yell and scream.
+
+CharLiteral    : '\'', StringBody, '\''
+
+StringLiteral  : '"', StringBody, '"'
+
+ArrayLiteral   : '[', (Expr, ',') *, Expr, ','?, ']', TypeKeyword?
+
+TypeKeyword    : 'i8' | 'i16' | 'i32' | 'i64' | 'iexp' | 'u8' | 'u16' | 'u32' | 'u64' | 'f32' | 'f64'
+               : 'fexp' | 'char' | 'bool' | 'ref' | 'String' | 'str'
+
+# ! means anything other than the characters in its operand. {An exact number}
+
+StringBody     : ( !('"' | '\')*, ('\"' | '\n' | '\N' | '\t' | '\T', | '\\' | ('\{', Expr, '}')
+                   ('\x', ('0' - '9' | 'A' - 'F' | 'a' - 'f') {2}))
+                 )
