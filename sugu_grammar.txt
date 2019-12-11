@@ -1,6 +1,119 @@
-Initialization : Identifier, TypeKeyword, '=', expr
+{*
+  The entire grammar of the sugu programming language. Comments are ommitted from the syntax because they
+  aren't processed by the parser at all. They're discarded by the lexer right out ot the gate.
+  
+  This is a multiline comment, and a single line comment begins in a hash symbol. # This is also a comment.
+*}
 
-Assign         : (Identifier | MemFieldRef), ('=' | InPlaceAssignOperator), expr
+Program        : Imports?, (ImplicitMain | ExplicitMain)?,
+                  (Initialization | ConstDeclaration | Nonruntime | Function)*
+
+Imports        : (Import | ('namespace', Identifier, ':', '\n', Import+, '\n', '\n')) +
+
+Import         : 'import', Identifier, ('::', Identifier) ?, '\n'
+
+ImplicitMain   : ((Statement | '|'), ('\n' | ';'))*
+
+ExplicitMain   : 'fun', 'main', 'i32', '(', (Identifier, 'List')?, ')', ':', '\n',
+                  StmtBlock
+
+ConstDeclaration : 'const', Initialization
+
+# Nonruntimes are executed during compilation and can compute the values of constants declared available
+# using the .available keyword.
+
+Nonruntime     : '.nonruntime', '\n',
+                  (Statement | Function | Struct | Enum | AvailableStmt | UnavailableStmt) *, '\n', '.end'
+
+AvailableStmt  : '.available', (ArgList | 'any')
+
+UnavailableStmt: '.unavailable' (ArgList | 'all')
+
+Function       : 'fun', Identifier, (TypeKeyword | 'noreturn'), '(', ParamList?, ')', ':', '\n',
+                    StmtBlock
+               : ErrFunc
+
+{*
+  A function prefixed with a .error statement is called when an error is raised. It either handles the error
+  or it leaves with a status of stdlib::PANIC.
+*}
+
+ErrFunc        : '.error', ('$', Identifier | TypeKeyword), '\n', Function
+
+
+Statement      : Expr, ('\n' | ';')
+               : Initialization
+               : Assign
+               : If_stmt
+               : Elif_stmt
+               : Else_stmt
+               : Switch_stmt
+               : While_stmt
+               : For_stmt
+               : Isol_stmt          # Used to limit the scope of variables declared inside it.
+               : With_stmt
+               : Break_stmt
+               : Continue_stmt
+               : Return_stmt
+               : Raise_stmt
+               : Leave_stmt         # Exit the program without returning to main with a specified exit status.
+
+If_stmt        : 'if', expr, ':', '\n',
+                 StmtBlock
+
+Elif_stmt      : 'elif', expr, ':', '\n'
+                 StmtBlock
+
+Else_stmt      : 'else', ':', '\n'
+                 StmtBlock
+
+Switch_stmt    : 'switch', expr, ':', '\n'
+                   Case_stmtBlock *,
+                 'case', 'default', ':', '\n'
+                   StmtBlock
+
+Case_stmtBlock : 'case', Expr, ':', '\n'
+                   StmtBlock
+
+While_stmt     : 'while', 'post'?, expr, ':', '\n'
+                   StmtBlock
+
+For_stmt       : 'for', Initialization | Assign, 'in', '[', Expr, '..', Expr, ']', ':', '\n'
+                   StmtBlock
+
+               : 'for', Initialization | Assign, 'in',
+                 (Identifier | StringLiteral | ArrLiteral | FunCall | MemFieldRef), ':', '\n'
+                   StmtBlock
+
+               : 'for', Initialization | Assign, ';', Expr, ';', Assign, ':', '\n'
+                   StmtBlock
+
+Isol_stmt      : 'isol', (('using', Identifier | MemFieldRef)* | ('using', 'any')), ':', '\n'
+                   StmtBlock
+
+with_stmt      : 'with' Expr 'as' Identifier, ':', '\n'
+                   StmtBlock
+
+Break_stmt     : 'break', '\n' | ';'
+
+Contunue_stmt  : 'continue', '\n' | ';'
+
+Return_stmt    : 'return', Expr?, '\n' | ';'
+
+Raise_stmt     : 'raise', Expr, '\n' | ';'
+
+Leave_stmt     : 'leave', Expr, '\n' | ';'
+
+StmtBlock      : (Statement | '|')*, ('\n', '\n') | '\'
+
+# There is no variable declaration because all variables in sugu must be initialized to prevent garbage
+# from getting into the program.
+
+Initialization : Identifier, ( TypeKeyword | DeclaredType ), '=', expr, ('\n' | ';')
+
+DeclaredType   : '$', Identifier
+
+Assign         : (Identifier | MemFieldRef), ('=' | InPlaceAssignOperator), expr, ('\n' | ';')
 
 InPlaceAssignOperator : MainOperator, '='
 
@@ -20,10 +133,12 @@ ParenExpr      : '(', expr, ')'
 MainOperator   : 'not'| '~' | '$' | '+' | '-' | '&' | '*'
                : 'and' | 'or' | '==' | '!=' | '>=' | '<=' | '<' | '>'
                : '**' | '*' | '/' | '//' | '%' | '+' | '-'
+               : '(', TypeKeyword, ')'
 
-FunCall        : Identifier, '(', ParamList? ')'
+FunCall        : Identifier, '(', ArgsList? ')'
 
-ParamList      : (Expr, ',') *, Expr, ','?
+ArgsList       : (Expr, ',') *, Expr, ','?
+               : (Expr, ',') *, '*', Identifier, ','?
 
 Atom           : Identifier | MemFieldRef | IntegerLiteral | FloatLiteral
                : CharLiteral | StringLiteral | ArrayLiteral
@@ -56,7 +171,7 @@ StringLiteral  : '"', StringBody, '"'
 ArrayLiteral   : '[', (Expr, ',') *, Expr, ','?, ']', TypeKeyword?
 
 TypeKeyword    : 'i8' | 'i16' | 'i32' | 'i64' | 'iexp' | 'u8' | 'u16' | 'u32' | 'u64' | 'f32' | 'f64'
-               : 'fexp' | 'char' | 'bool' | 'ref' | 'String' | 'str'
+               : 'fexp' | 'char' | 'bool' | ('ref', TypeKeyword) | ('ref', '$', Identifier) | 'String' | 'str'
 
 # ! means anything other than the characters in its operand. {An exact number}
 
