@@ -88,7 +88,7 @@ For_stmt       : 'for', Initialization | Assign, 'in', '[', Expr, '..', Expr, ']
                : 'for', Initialization | Assign, ';', Expr, ';', Assign, ':', '\n'
                    StmtBlock
 
-Isol_stmt      : 'isol', (('using', Identifier | MemFieldRef)* | ('using', 'any')), ':', '\n'
+Isol_stmt      : 'isolate', (('using', Identifier | MemFieldRef)* | ('using', 'any'))?, ':', '\n'
                    StmtBlock
 
 with_stmt      : 'with' Expr 'as' Identifier, ':', '\n'
@@ -114,6 +114,8 @@ Initialization : Identifier, ( TypeKeyword | DeclaredType ), '=', expr, ('\n' | 
 DeclaredType   : '$', Identifier
 
 Assign         : (Identifier | MemFieldRef), ('=' | InPlaceAssignOperator), expr, ('\n' | ';')
+
+# The in place arrithmetic only works with some of the operators. No keyword operators, no unary operators.
 
 InPlaceAssignOperator : MainOperator, '='
 
