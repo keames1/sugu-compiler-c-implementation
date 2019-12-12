@@ -28,7 +28,8 @@ AvailableStmt  : '.available', (ArgList | 'any')
 
 UnavailableStmt: '.unavailable' (ArgList | 'all')
 
-Function       : 'fun', Identifier, (TypeKeyword | 'noreturn'), '(', ParamList?, ')', ':', '\n',
+Function       : 'fun', Identifier, (TypeKeyword | 'noreturn'),
+                 '(', ('impl', Identifier, TypeKeyword)?, ParamList?, ')', ':', '\n',
                     StmtBlock
                : ErrFunc
 
@@ -138,7 +139,7 @@ Assign         : (Identifier | MemFieldRef), ('=' | InPlaceArrithOperator), expr
 
 # The in place arrithmetic only works with some of the operators. No keyword operators, no unary operators.
 
-InPlaceArrithOperator : InPlaceArrSubset, '='
+InPlaceArrithOperator : InPlaceArrSubset, <NO_SEPERATOR> '='
 
 InPlaceArrSubset : '+' | '-' | '**' | '*' | '//' | '/' | '%' | '^' | '&' | '|' | '>>' | '<<'
 
