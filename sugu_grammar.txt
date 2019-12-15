@@ -6,11 +6,13 @@
 *}
 
 Program        : Imports?, (ImplicitMain | ExplicitMain)?,
-                  (Initialization | GlobalConstDeclaration | Nonruntime | Function | Enum | Struct)*
+                  (Initialization | GlobalConstDeclaration | GlobalInitialization |
+                  Nonruntime | Function | Enum | Struct)*
 
-Imports        : (Import | ('namespace', Identifier, ':', '\n', Import+, '\n', '\n')) +
+Imports        : (Import* | ('namespace', Identifier, ':', '\n', 
+                 (Import | '|')*, ('\n', '\n') | '\')) *
 
-Import         : 'import', Identifier, ('::', Identifier) ?, '\n'
+Import         : 'import', Identifier, ('::', Identifier) *, '\n'
 
 ImplicitMain   : ((Statement | '|'), ('\n' | ';'))*
 
@@ -22,9 +24,9 @@ ExplicitMain   : 'fun', 'main', 'i32', '(', (Identifier, 'List')?, ')', ':', '\n
 
 Nonruntime     : '.nonruntime', '\n',
                   (Statement | Function | Struct | Enum | AvailableStmt | UnavailableStmt | '|') *,
-                  '\n', '.end'
+                  '\n', '.end', '\n'
 
-AvailableStmt  : '.available', (ArgList | 'any')
+AvailableStmt  : '.available', (ArgList | 'all')
 
 UnavailableStmt: '.unavailable' (ArgList | 'all')
 
@@ -32,6 +34,17 @@ Function       : 'fun', Identifier, (TypeKeyword | 'noreturn'),
                  '(', ('impl', Identifier, TypeKeyword)?, ParamList?, ')', ':', '\n',
                     StmtBlock
                : ErrFunc
+               : OverrideFunc
+
+# The default error handling functions take a lambda which tries to handle the error and returns True
+# if it succeeded.
+
+ErrFunc        : '.error', ('$', Identifier | TypeKeyword), '\n',
+                 'fun', Identifier, 'noreturn',
+                   '(', Identifier, 'sig' | 'signature', 'bool', '(', ')', ')'
+
+OverrideFunc   : '.override', '\n'
+                 Function
 
 # Enums can also inherit from other enums. This defaults
 # the first enumerand to superEnum.largerstEnumerand + 1.
@@ -39,33 +52,54 @@ Function       : 'fun', Identifier, (TypeKeyword | 'noreturn'),
 # of the enumerands in the type hierarchy cannot conflict.
 
 Enum           : 'enum', Identifier, ( '(', Identifier, ')' )?, ':', '\n',
-                 ((Identifier | EnumerandAssign), ',')*, (Identifier | EnumerandAssign), ','?,
+                 ((Identifier | EnumerandAssign | Enum), ',')*, (Identifier | EnumerandAssign), ','?,
                  (('\n', '\n') | '\')
+               : BitFieldEnum
+
+# Bit field enums cannot inherrit from other enums nor contain enums recursively.
+# A single identifier defaults to being 1 bit which may have names assigned to their 2 values
+# (The default is the fields integer value being recognized instead.) Using the double colon syntax,
+# a bit field can be given more than one bit. It must be possible to evaluate the expression after
+# the :: at compile time. Expr result number of bits is assigned to that bit field. All values in
+# the multiple bit field can then be assigned names with the curly brace syntax or subdivided into
+# smaller bit fields.
+
+BitFieldEnum   : '.bitField', '\n'
+                 'enum', Identifier, ':', '\n'
+                 (BitFieldEnumerandDeclaration | '|') *,
+                 (('\n', '\n') | '\')
+
+MultiBitField  : Identifier, '::', Expr, ':', '\n'
+                 (
+                   ('{', (BitFieldEnumerandDeclaration, ',')*, BitFieldEnumerandDeclaration, ','?, '}')   |
+                   MultiBitField |
+                   '|'
+                 ) *
+
+BitFieldEnumerandDeclaration : Identifier, ('{', (Identifier, Identifier) | 'bool', '}') ?, ',', '\n'
+               : MultiBitField
 
 EnumerandAssign: Identifier, '=', Expr
 
 Struct         : 'struct', Identifier, ( '(', Identifier?, (',' Identifier, ','?)* ')' )?, ':', '\n',
-                  (FieldDeclaration | ConstDeclaration)*, ('\n', '\n') | '\'
+                  (FieldDeclaration | ConstDeclaration | Struct | Enum)*, ('\n', '\n') | '\'
 
 # The compiler can populate a structs fields with default values when it allocates the struct.
 
-FieldDeclaration : 'field', Identifier, TypeKeyword, ('=', Expr), '\n' | ';'
+FieldDeclaration : 'field', Identifier, TypeKeyword, ('=', Expr)?, '\n' | ';'
 
 GlobalConstDeclaration : 'global', ConstDeclaration
-
-ConstDeclaration : 'const', Initialization
+GlobalInitialization   : 'global', Initialization
 
 {*
   A function prefixed with a .error statement is called when an error is raised. It either handles the error
   or it leaves with a status of stdlib::PANIC.
 *}
 
-ErrFunc        : '.error', ('$', Identifier | TypeKeyword), '\n', Function
-
-
 Statement      : Expr, ('\n' | ';')
                : Initialization
                : Assign
+               : ConstDeclaration
                : If_stmt
                : Elif_stmt
                : Else_stmt
@@ -92,28 +126,32 @@ Else_stmt      : 'else', ':', '\n'
 Switch_stmt    : 'switch', expr, ':', '\n'
                    Case_stmtBlock *,
                  'case', 'default', ':', '\n'
-                   StmtBlock
+                   StmtBlock,
+                   Break_stmt?
 
 Case_stmtBlock : 'case', Expr, ':', '\n'
-                   StmtBlock
+                   StmtBlock,
+                   Break_stmt?
+
+# The keyword 'post' will declare the while loop to be a post test loop.
 
 While_stmt     : 'while', 'post'?, expr, ':', '\n'
                    StmtBlock
 
-For_stmt       : 'for', Initialization | Assign, 'in', '[', Expr, '..', Expr, ']', ':', '\n'
+For_stmt       : 'for', Initialization | Assign, 'in', '[', Expr, 'to', Expr, ']', ':', '\n'
                    StmtBlock
 
                : 'for', Initialization | Assign, 'in',
-                 (Identifier | StringLiteral | ArrLiteral | FunCall | MemFieldRef), ':', '\n'
+                 (Identifier | MemFieldRef | StringLiteral | ArrLiteral | FunCall), ':', '\n'
                    StmtBlock
 
-               : 'for', Initialization | Assign, ';', Expr, ';', Assign, ':', '\n'
+               : 'for', Initialization | Assign, ';', Expr, ';', Expr | Assign, ':', '\n'
                    StmtBlock
 
 Isol_stmt      : 'isolate', (('using', Identifier | MemFieldRef)* | ('using', 'any'))?, ':', '\n'
                    StmtBlock
 
-with_stmt      : 'with' Expr 'as' Identifier, ':', '\n'
+with_stmt      : 'with' Expr 'as' Identifier, TypeKeyword, ':', '\n'
                    StmtBlock
 
 Break_stmt     : 'break', '\n' | ';'
@@ -127,6 +165,8 @@ Raise_stmt     : 'raise', Expr, '\n' | ';'
 Leave_stmt     : 'leave', Expr, '\n' | ';'
 
 StmtBlock      : (Statement | '|')*, ('\n', '\n') | '\'
+
+ConstDeclaration : 'const', Initialization
 
 # There is no variable declaration because all variables in sugu must be initialized to prevent garbage
 # from getting into the program.
@@ -146,7 +186,7 @@ InPlaceArrSubset : '+' | '-' | '**' | '*' | '//' | '/' | '%' | '^' | '&' | '|' |
 Expr           : Expr, MainOperator, Expr
                : MainOperator, Expr
                : Identifier | MemFieldRef, ('<+' | '<-')
-               : Expr, 'if', Expr, ('elif', expr, ':', expr)?, 'else', Expr
+               : Expr, 'if', Expr, ('elif', expr, ':', expr)*, 'else', Expr
                : Atom | FunCall | ParenExpr
 
 ParenExpr      : '(', expr, ')'
@@ -161,17 +201,18 @@ MainOperator   : 'not'| '~' | '$' | '+' | '-' | '&' | '*'
                : '**' | '*' | '/' | '//' | '%' | '+' | '-'
                : '(', TypeKeyword, ')'
 
-FunCall        : Identifier, '(', ArgsList? ')'
+FunCall        : Identifier | MemFieldRef, '(', ArgsList? ')'
 
 ArgsList       : (Expr, ',') *, Expr, ','?
-               : (Expr, ',') *, '*', Identifier, ','?
+               : (Expr, ',') *, ('**', Expr, ','?)?
 
 Atom           : Identifier | MemFieldRef | IntegerLiteral | FloatLiteral
-               : CharLiteral | StringLiteral | ArrayLiteral
+               : CharLiteral | StringLiteral | ArrayLiteral | Singleton | Lambda
 
-MemFieldRef    : (Identifier, '.') +, Identifier
+Singleton      : 'True' | 'False' | 'None'
 
-Identifier     : ('a' - 'z' | '_') +, ('a' - 'z' | '_' | '0' - '9') *
+Lambda         : '(', ParamList, ')', ':', '\n'
+                 StmtBlock
 
 IntegerLiteral : (ImplicitDecimal | ExplicitDecimal | Hexadecimal | Binary), TypeKeyword?
 
@@ -183,7 +224,7 @@ Hexadecimal    : ('0x' | '0X'), ('0' - '9' | 'a' - 'f' | 'A' - 'F' | '_') *
 
 Binary         : ('0b' | '0B'), ('0' | '1' | '_')
 
-# Floats are only supported on decimal as of now.
+# Floats are only supported in decimal as of now.
 
 FloatLiteral   : ('0d' | '0D')?, ('0' - '9'), ('0' - '9' | '_') * '.', ('0' - '9' | '_') +
 
@@ -198,9 +239,23 @@ ArrayLiteral   : '[', (Expr, ',') *, Expr, ','?, ']', TypeKeyword?
 
 TypeKeyword    : 'i8' | 'i16' | 'i32' | 'i64' | 'iexp' | 'u8' | 'u16' | 'u32' | 'u64' | 'f32' | 'f64'
                : 'fexp' | 'char' | 'bool' | ('ref', TypeKeyword) | ('ref', '$', Identifier) | 'String' | 'str'
+               : 'List'
+               : '$', Identifier | MemFieldRef
+               : 'signature', TypeKeyword, '(', (TypeKeyword, ',')*, TypeKeyword, ',', ')'
+               : 'sig', TypeKeyword, '(', (TypeKeyword, ',')*, TypeKeyword, ',', ')'
 
 # ! means anything other than the characters in its operand. {An exact number}
 
-StringBody     : ( !('"' | '\')*, ('\"' | '\n' | '\N' | '\t' | '\T', | '\\' | ('\{', Expr, '}')
+StringBody     : ( !('"' | '\')*, ('\"' | '\n' | '\N' | '\t' | '\T', | '\\' | ('\{', Expr, '}') |
                    ('\x', ('0' - '9' | 'A' - 'F' | 'a' - 'f') {2}))
                  )
+
+ParamList      : ('impl', Identifier, TypeKeyword | declaredType)?,
+                 ((Identifier, TypeKeyword | DeclaredType), ',')*,
+                 (Identifier, TypeKeyword | DeclaredType), ','?
+               : ''
+
+MemFieldRef    : (Expr, '.'), (Identifier, '.') *, Identifier
+               : (Identifier, '.') +, Identifier
+
+Identifier     : (('a' - 'z' | '_') +, ('a' - 'z' | '_' | '0' - '9') *)
